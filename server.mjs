@@ -9,6 +9,26 @@ function json(response, status, body) {
   response.end(JSON.stringify(body));
 }
 
+const AI_TIMEOUT_MS = 300;
+const ALLOWED_TOPICS = new Set(["delivery", "pricing", "other"]);
+
+async function getTriageResult(text) {
+  const fallback = { status: "manual_review", topic: null, draft: null };
+
+  try {
+    const signal = AbortSignal.timeout(AI_TIMEOUT_MS);
+    const result = JSON.parse(await classify(text, { signal }));
+
+    if (!ALLOWED_TOPICS.has(result?.topic)) return fallback;
+    if (typeof result.draft !== "string") return fallback;
+    if (result.draft.trim() === "") return fallback;
+
+    return { status: "ready", topic: result.topic, draft: result.draft };
+  } catch {
+    return fallback;
+  }
+}
+
 async function handleTriage(request, response) {
   const chunks = [];
   for await (const chunk of request) chunks.push(chunk);
@@ -27,8 +47,8 @@ async function handleTriage(request, response) {
     return json(response, 400, { status: "invalid_input" });
   }
 
-  const result = JSON.parse(await classify(text));
-  return json(response, 200, { status: "ready", ...result });
+  const result = await getTriageResult(text);
+  return json(response, 200, result);
 }
 
 createServer(async (request, response) => {
