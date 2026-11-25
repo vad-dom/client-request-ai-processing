@@ -9,15 +9,49 @@ function json(response, status, body) {
   response.end(JSON.stringify(body));
 }
 
+const AI_TIMEOUT_MS = 300;
+const ALLOWED_TOPICS = new Set(["delivery", "pricing", "other"]);
+
+async function getTriageResult(text) {
+  const fallback = { status: "manual_review", topic: null, draft: null };
+
+  try {
+    const signal = AbortSignal.timeout(AI_TIMEOUT_MS);
+    const result = JSON.parse(await classify(text, { signal }));
+
+    if (!ALLOWED_TOPICS.has(result?.topic)) return fallback;
+    if (typeof result.draft !== "string") return fallback;
+    if (result.draft.trim() === "") return fallback;
+
+    return { status: "ready", topic: result.topic, draft: result.draft };
+  } catch {
+    return fallback;
+  }
+}
+
 async function handleTriage(request, response) {
   const chunks = [];
   for await (const chunk of request) chunks.push(chunk);
-  const { text } = JSON.parse(Buffer.concat(chunks).toString("utf8"));
-  const result = JSON.parse(await classify(text));
-  return json(response, 200, { status: "ready", ...result });
+
+  let body;
+
+  try {
+    body = JSON.parse(Buffer.concat(chunks).toString("utf8"));
+  } catch {
+    return json(response, 400, { status: "invalid_input" });
+  }
+
+  const text = body?.text;
+
+  if (typeof text !== "string" || text.trim() === "") {
+    return json(response, 400, { status: "invalid_input" });
+  }
+
+  const result = await getTriageResult(text);
+  return json(response, 200, result);
 }
 
-createServer(async (request, response) => {
+export const server = createServer(async (request, response) => {
   if (request.method === "GET" && request.url === "/") {
     response.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
     response.end(html);
