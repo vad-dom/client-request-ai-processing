@@ -69,6 +69,8 @@
       other: "Другое",
     };
 
+    let latestRequestId = 0;
+
     function renderResult(data) {
       result.hidden = false;
 
@@ -112,6 +114,8 @@
     form.addEventListener("submit", async (event) => {
       event.preventDefault();
 
+      const requestId = ++latestRequestId;
+
       renderResult({ status: "loading" });
 
       try {
@@ -122,6 +126,8 @@
         });
 
         const data = await reply.json();
+
+        if (requestId !== latestRequestId) return;
 
         if (reply.status === 400 && data?.status === "invalid_input") {
           renderResult(data);
@@ -138,6 +144,8 @@
 
         renderResult(data);
       } catch {
+        if (requestId !== latestRequestId) return;
+
         renderResult({ status: "request_error" });
       }
     });
