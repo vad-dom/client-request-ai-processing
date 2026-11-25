@@ -12,7 +12,21 @@ function json(response, status, body) {
 async function handleTriage(request, response) {
   const chunks = [];
   for await (const chunk of request) chunks.push(chunk);
-  const { text } = JSON.parse(Buffer.concat(chunks).toString("utf8"));
+
+  let body;
+
+  try {
+    body = JSON.parse(Buffer.concat(chunks).toString("utf8"));
+  } catch {
+    return json(response, 400, { status: "invalid_input" });
+  }
+
+  const text = body?.text;
+
+  if (typeof text !== "string" || text.trim() === "") {
+    return json(response, 400, { status: "invalid_input" });
+  }
+
   const result = JSON.parse(await classify(text));
   return json(response, 200, { status: "ready", ...result });
 }
