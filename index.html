@@ -78,6 +78,10 @@
       notice.textContent = "";
 
       switch (data.status) {
+        case "loading":
+          status.textContent = "Обработка заявки...";
+          break;
+
         case "ready":
           status.textContent = "Готово";
           topic.textContent = TOPIC_LABELS[data.topic];
@@ -94,19 +98,48 @@
         case "invalid_input":
           status.textContent = "Введите текст заявки.";
           break;
+
+        case "request_error":
+        default:
+          status.textContent = "Требуется ручная обработка";
+          topic.textContent = "Не определена";
+          notice.textContent =
+            "Не удалось получить результат от сервера. Попробуйте ещё раз или обработайте заявку вручную.";
+          break;
       }
     }
 
     form.addEventListener("submit", async (event) => {
       event.preventDefault();
 
-      const reply = await fetch("/api/triage", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text: message.value }),
-      });
+      renderResult({ status: "loading" });
 
-      renderResult(await reply.json());
+      try {
+        const reply = await fetch("/api/triage", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ text: message.value }),
+        });
+
+        const data = await reply.json();
+
+        if (reply.status === 400 && data?.status === "invalid_input") {
+          renderResult(data);
+          return;
+        }
+
+        if (reply.status !== 200) {
+          throw new Error(`Unexpected HTTP status: ${reply.status}`);
+        }
+
+        if (data?.status !== "ready" && data?.status !== "manual_review") {
+          throw new Error("Unexpected API response");
+        }
+
+        renderResult(data);
+      } catch {
+        renderResult({ status: "request_error" });
+      }
     });
   </script>
 </body>
